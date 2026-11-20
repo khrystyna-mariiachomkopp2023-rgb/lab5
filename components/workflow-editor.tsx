@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowDown,
   ArrowLeft,
@@ -38,7 +38,14 @@ const tools = [
   { label: 'Інші інструменти', icon: Plus, key: 'more' },
 ]
 
-export default function WorkflowEditor() {
+type WorkflowEditorProps = {
+  onGoHome: () => void
+  onOpenTemplates: () => void
+  onInvite: () => void
+  boardTitle?: string
+}
+
+export default function WorkflowEditor({ onGoHome, onOpenTemplates, onInvite, boardTitle = 'Нова схема / Шлях користувача' }: WorkflowEditorProps) {
   const [nodes, setNodes] = useState<FlowNode[]>([
     { id: 1, label: 'Початок', shape: 'start' },
     { id: 2, label: 'Перевірка дизайну', shape: 'process' },
@@ -49,10 +56,12 @@ export default function WorkflowEditor() {
   const [activeTab, setActiveTab] = useState('Аркуші')
   const [zoom, setZoom] = useState(100)
   const [pageCount, setPageCount] = useState(1)
+  const [activePage, setActivePage] = useState(1)
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [shareOpen, setShareOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [commandQuery, setCommandQuery] = useState('')
   const [showSchema, setShowSchema] = useState(false)
   const [notice, setNotice] = useState('')
 
@@ -61,6 +70,7 @@ export default function WorkflowEditor() {
     if (!search.trim()) return nodes
     return nodes.filter((node) => node.label.toLowerCase().includes(search.toLowerCase()))
   }, [nodes, search])
+  const commandOptions = ['Нова фігура', 'Нова стрілка', 'Коментар', 'Пошук на схемі', 'Шаблони'].filter((item) => item.toLowerCase().includes(commandQuery.toLowerCase()))
 
   function addNode(shape: NodeShape, label?: string) {
     const id = Date.now()
@@ -90,22 +100,44 @@ export default function WorkflowEditor() {
     if (key === 'shapes') addNode('process')
     if (key === 'text') addNode('process', 'Текст')
     if (key === 'connect') setNotice('Оберіть дві фігури, щоб з’єднати їх')
-    if (key === 'templates') setNotice('Шаблони скоро з’являться')
+    if (key === 'templates') onOpenTemplates()
     if (key === 'images') setNotice('Перетягніть зображення на полотно')
     if (key === 'draw' || key === 'table' || key === 'more') setNotice('Інструмент вибрано')
     window.setTimeout(() => setNotice(''), 1800)
   }
 
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setCommandOpen(true)
+      }
+      if (event.key === 'Escape') setCommandOpen(false)
+    }
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [])
+
+  function runCommand(command: string) {
+    setCommandOpen(false)
+    setCommandQuery('')
+    if (command === 'Нова фігура') addNode('process')
+    if (command === 'Нова стрілка') addStep()
+    if (command === 'Коментар') addNode('comment')
+    if (command === 'Шаблони') onOpenTemplates()
+    if (command === 'Пошук на схемі') setSearchOpen(true)
+  }
+
   return (
     <main className="editor-shell">
       <header className="topbar">
-        <button className="back-button" type="button" onClick={() => setNotice('Повернення до дошок')}>
+        <button className="back-button" type="button" onClick={onGoHome}>
           <ArrowLeft aria-hidden="true" /> <span>Дошки</span>
         </button>
         <div className="breadcrumb">Мої дошки <span>/</span> Нова схема</div>
         <div className="top-actions">
           <span className="collaborators">Ви · Марія · Анна</span>
-          <button className="share-button" type="button" onClick={() => setShareOpen(true)}>
+          <button className="share-button" type="button" onClick={onInvite}>
             <Share2 aria-hidden="true" /> Поділитися
           </button>
           <button className="show-schema" type="button" onClick={() => setShowSchema((value) => !value)}>
@@ -151,7 +183,7 @@ export default function WorkflowEditor() {
             <p className="helper-text">Інструменти підписані літерою · часті дії над полотном · Пошук команд: Ctrl+K</p>
 
             <div className={`canvas-board ${showSchema ? 'canvas-focused' : ''}`}>
-              <div className="board-heading">Нова схема / Шлях користувача</div>
+              <div className="board-heading">{boardTitle}</div>
               {showSchema && <span className="overview-pill">Огляд схеми</span>}
               <div className="flow-stage" role="group" aria-label="Етапи шляху користувача">
                 <div className="flow-line" aria-hidden="true" />
@@ -183,7 +215,7 @@ export default function WorkflowEditor() {
                 ))}
               </div>
               {visibleNodes.length === 0 && <p className="empty-search">Нічого не знайдено</p>}
-              <div className="board-save">Аркуш {pageCount} · Щойно збережено</div>
+              <div className="board-save">Аркуш {activePage} · Щойно збережено</div>
             </div>
 
             <div className="canvas-status">
@@ -206,17 +238,19 @@ export default function WorkflowEditor() {
           {activeTab === 'Аркуші' ? (
             <div className="pages-panel">
               <h2>Аркуші · {pageCount}</h2>
-              <button className="add-page" type="button" onClick={() => setPageCount((count) => count + 1)}><Plus /> Додати аркуш</button>
-              <button className="page-card" type="button" aria-label={`Відкрити аркуш ${pageCount}`}>
-                <span className="page-thumbnail">
-                  <span className="thumbnail-line" />
-                  <span className="thumbnail-node thumbnail-node-start" />
-                  <span className="thumbnail-node thumbnail-node-mid" />
-                  <span className="thumbnail-node thumbnail-node-end" />
-                </span>
-                <span className="page-name">Без назви</span>
-                <span className="page-number">{pageCount}</span>
-              </button>
+              <button className="add-page" type="button" onClick={() => { const nextPage = pageCount + 1; setPageCount(nextPage); setActivePage(nextPage) }}><Plus /> Додати аркуш</button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+                <button className={`page-card ${activePage === page ? 'page-card-active' : ''}`} key={page} type="button" aria-label={`Відкрити аркуш ${page}`} aria-pressed={activePage === page} onClick={() => setActivePage(page)}>
+                  <span className="page-thumbnail">
+                    <span className="thumbnail-line" />
+                    <span className="thumbnail-node thumbnail-node-start" />
+                    <span className="thumbnail-node thumbnail-node-mid" />
+                    <span className="thumbnail-node thumbnail-node-end" />
+                  </span>
+                  <span className="page-name">Без назви</span>
+                  <span className="page-number">{page}</span>
+                </button>
+              ))}
             </div>
           ) : activeTab === 'Коментарі' ? (
             <div className="discussion-panel">
@@ -240,14 +274,15 @@ export default function WorkflowEditor() {
       </footer>
 
       {notice && <div className="toast-message" role="status">{notice}</div>}
-      {shareOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShareOpen(false) }}>
-          <section className="share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-title">
-            <button className="modal-close" type="button" aria-label="Закрити" onClick={() => setShareOpen(false)}><X /></button>
-            <h2 id="share-title">Поділитися схемою</h2>
-            <p>Запросіть команду до спільної роботи над схемою.</p>
-            <div className="share-link"><span>board.app/s/нова-схема</span><button type="button" onClick={() => { setShareOpen(false); setNotice('Посилання скопійовано') }}>Копіювати</button></div>
-            <button className="share-confirm" type="button" onClick={() => setShareOpen(false)}>Готово</button>
+      {commandOpen && (
+        <div className="modal-backdrop command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setCommandOpen(false); setCommandQuery('') } }}>
+          <section className="command-dialog" role="dialog" aria-modal="true" aria-labelledby="command-title">
+            <header className="command-header"><h2 id="command-title">Пошук команд (Ctrl+K)</h2><button type="button" aria-label="Закрити" onClick={() => { setCommandOpen(false); setCommandQuery('') }}><X /></button></header>
+            <div className="command-content">
+              <input autoFocus aria-label="Пошук команд" value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229 && commandOptions[0]) runCommand(commandOptions[0]) }} placeholder="Наприклад: Нова фігура..." />
+              {commandQuery && commandOptions.length > 0 && <div className="command-results" role="listbox">{commandOptions.map((command) => <button type="button" role="option" key={command} onClick={() => runCommand(command)}>{command}</button>)}</div>}
+              <p>Enter — виконати · Esc — закрити</p>
+            </div>
           </section>
         </div>
       )}
